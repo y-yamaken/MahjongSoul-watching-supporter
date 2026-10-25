@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>雀魂 観戦通知</title>
+  <link rel="stylesheet" href="popup.css">
+  <script type="module" src="popup.js"></script>
+</head>
+<body>
+  <main>
+    <header class="header">
+      <span class="brand-mark" aria-hidden="true">雀</span>
+      <h1>観戦通知</h1>
+      <span id="state-label" class="state-label">準備中</span>
+    </header>
+
+    <section class="status-panel" aria-label="監視状況" aria-live="polite" aria-atomic="true">
+      <p id="status-message" class="status-message">状態を読み込み中</p>
+      <div class="last-check"><span>最終確認</span><time id="checked-at">—</time></div>
+      <p id="matched-names" class="matched-names" hidden></p>
+    </section>
+
+    <form id="settings-form">
+      <fieldset id="settings-fields" disabled>
+        <label for="names">ユーザー名 <span class="label-note">1行に1人</span></label>
+        <textarea id="names" rows="3" required spellcheck="false" autocomplete="off" placeholder="ユーザー名を入力"></textarea>
+        <div class="interval-row">
+          <label for="interval">更新間隔</label>
+          <div class="number-input"><input id="interval" type="number" min="30" max="3600" step="1" value="60" required inputmode="numeric"><span>秒</span></div>
+        </div>
+        <div class="interval-row">
+          <label for="hold-seconds">押下時間</label>
+          <div class="number-input"><input id="hold-seconds" type="number" min="0.1" max="2" step="0.1" value="0.5" required inputmode="decimal"><span>秒</span></div>
+        </div>
+      </fieldset>
+      <button id="calibrate" class="button button-outline full-width" type="button" disabled>更新ボタンを指定</button>
+      <div class="action-row">
+        <button id="start" class="button button-primary" type="submit" disabled>監視を開始</button>
+        <button id="stop" class="button button-stop" type="button" disabled>停止</button>
+      </div>
+    </form>
+
+    <div id="error-panel" class="error-panel" role="alert" hidden>
+      <p id="error-message"></p>
+      <button id="retry" class="text-button" type="button" hidden>再読込</button>
+    </div>
+
+    <div class="secondary-actions">
+      <button id="check-now" class="text-button" type="button" disabled>今すぐ確認</button>
+      <button id="test-notification" class="text-button" type="button" disabled>通知をテスト</button>
+    </div>
+
+    <div class="notes">
+      <p><span aria-hidden="true">▣</span>雀魂のタブを開いたままにしてください。</p>
+      <p><span aria-hidden="true">ⓘ</span>使用中はChromeの操作通知が表示されます。</p>
+    </div>
+
+    <details class="details">
+      <summary>受信した一覧</summary>
+      <div class="details-content">
+        <dl class="scores">
+          <div><dt>対局数</dt><dd id="game-count">—</dd></div>
+          <div><dt>人数</dt><dd id="player-count">—</dd></div>
+        </dl>
+        <label for="received-names">プレイヤー名</label>
+        <textarea id="received-names" rows="5" readonly spellcheck="false"></textarea>
+        <label for="click-diagnostics" class="diagnostics-label">動作確認</label>
+        <textarea id="click-diagnostics" rows="5" readonly spellcheck="false"></textarea>
+        <button id="copy-diagnostics" class="text-button" type="button">診断をコピー</button>
+      </div>
+    </details>
+  </main>
+</body>
+</html>

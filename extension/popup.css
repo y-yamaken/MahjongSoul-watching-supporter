@@ -1,0 +1,74 @@
+:root {
+  color-scheme: light;
+  font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  color: #1b3041;
+  background: #f4f7f8;
+  font-size: 13px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; width: 360px; }
+main { padding: 14px 20px; }
+button, input, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; }
+[hidden] { display: none !important; }
+.header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 38px;
+  border-radius: 7px;
+  background: #174d47;
+  box-shadow: 0 3px 0 #c3d3cd;
+  color: white;
+  font-weight: 700;
+  font-size: 22px;
+}
+h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: .03em; }
+.state-label { margin-left: auto; border-radius: 20px; padding: 5px 10px; background: #e4eaf0; color: #455e70; font-size: 11px; font-weight: 700; }
+.state-label[data-running="true"] { background: #dcf0e7; color: #1b644f; }
+.status-panel { padding: 13px 14px; border: 1px solid #dce5e9; border-radius: 10px; background: white; margin-bottom: 12px; }
+.status-message { margin: 0 0 9px; font-weight: 600; line-height: 1.65; overflow-wrap: anywhere; }
+.last-check { display: flex; justify-content: space-between; gap: 12px; color: #657683; font-size: 11px; }
+.matched-names { margin: 10px 0 0; color: #1b644f; font-weight: 700; line-height: 1.6; overflow-wrap: anywhere; }
+fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+label { display: block; font-weight: 600; }
+.label-note { margin-left: 5px; color: #71818b; font-size: 11px; font-weight: 400; }
+textarea, input { border: 1px solid #bccbd2; border-radius: 7px; padding: 10px; background: white; color: #1b3041; }
+textarea { display: block; width: 100%; margin-top: 7px; resize: vertical; min-height: 76px; max-height: 180px; line-height: 1.55; }
+textarea::placeholder { color: #84929b; }
+input:disabled, textarea:disabled { background: #edf1f3; color: #647986; }
+:focus-visible { outline: 3px solid #8bbfb0; outline-offset: 2px; }
+.interval-row { display: flex; align-items: center; justify-content: space-between; margin: 10px 0; }
+.number-input { display: flex; align-items: center; gap: 8px; color: #657683; }
+.number-input input { width: 90px; padding: 8px 9px; }
+.button { min-height: 39px; border: 1px solid transparent; border-radius: 7px; font-weight: 600; padding: 9px 12px; transition: background-color .12s; }
+.button-outline { color: #27554f; border-color: #acc6bd; background: #f9fcfa; }
+.button-outline:hover:enabled { background: #e8f2ed; }
+.full-width { width: 100%; }
+.action-row { display: grid; grid-template-columns: 1fr 82px; gap: 9px; margin-top: 10px; }
+.button-primary { background: #1e6655; color: white; }
+.button-primary:hover:enabled { background: #155343; }
+.button-stop { color: #354f60; background: #e4ebef; }
+.button-stop:hover:enabled { background: #d4e0e7; }
+.button:disabled { opacity: .42; }
+.secondary-actions { display: flex; justify-content: space-between; margin: 10px 0 10px; }
+.text-button { border: 0; padding: 7px 0; background: transparent; color: #315e70; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.text-button:disabled { color: #9ba7ae; text-decoration: none; }
+.notes { display: grid; gap: 6px; color: #657683; font-size: 10px; line-height: 1.6; }
+.notes p { display: flex; gap: 7px; margin: 0; }
+.notes span { color: #4a7b70; width: 12px; text-align: center; font-size: 12px; }
+.error-panel { padding: 10px 12px; margin-top: 12px; border: 1px solid #e5c5ba; border-radius: 7px; background: #fff3ec; color: #8f3e28; }
+.error-panel p { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.error-panel button { color: inherit; }
+.details { margin-top: 12px; border-top: 1px solid #dce5e9; padding-top: 12px; font-size: 11px; color: #657683; }
+summary { cursor: pointer; width: fit-content; padding: 3px 0; }
+.details-content { padding-top: 10px; }
+.scores { display: grid; gap: 7px; margin: 0 0 13px; }
+.scores div { display: flex; justify-content: space-between; gap: 12px; }
+.scores dt, .scores dd { margin: 0; }
+#received-names { font-size: 11px; }
+
+.diagnostics-label { margin-top: 14px; }
+#click-diagnostics { font-size: 11px; }

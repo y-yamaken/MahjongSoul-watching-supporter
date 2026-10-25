@@ -1,0 +1,24 @@
+{
+  "name": "mahjongsoul-watching-supporter",
+  "version": "0.3.3",
+  "private": true,
+  "type": "module",
+  "description": "雀魂の観戦一覧を更新してWindowsに通知するChrome拡張",
+  "scripts": {
+    "prepare:vendor": "node scripts/prepare-vendor.mjs",
+    "test": "node --test",
+    "check": "node scripts/check.mjs",
+    "test:ocr": "node scripts/smoke-ocr.mjs",
+    "build": "node scripts/build-network.mjs",
+    "test:network": "node scripts/smoke-network.mjs",
+    "test:background": "node scripts/smoke-background.mjs"
+  },
+  "dependencies": {
+    "tesseract.js": "6.0.1",
+    "tesseract.js-core": "6.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "playwright-core": "1.63.0"
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "雀魂 観戦ウォッチ",
+  "version": "0.3.3",
+  "description": "バックグラウンドで観戦一覧を定期更新し、指定ユーザー名を検出して通知します。",
+  "minimum_chrome_version": "120",
+  "permissions": [
+    "scripting",
+    "storage",
+    "alarms",
+    "notifications",
+    "debugger"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "雀魂 観戦ウォッチ"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  },
+  "host_permissions": [
+    "https://game.mahjongsoul.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://game.mahjongsoul.com/*"
+      ],
+      "js": [
+        "network-main.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://game.mahjongsoul.com/*"
+      ],
+      "js": [
+        "network-bridge.js",
+        "page.js"
+      ],
+      "run_at": "document_start"
+    }
+  ]
+}
