@@ -288,6 +288,7 @@
     }, 500);
   }
   function clearNativeGuard() {
+    nativeGuard?.cancelFinish?.();
     clearTimeout(nativeTimer);
     nativeTimer = undefined;
     nativeGuard = null;
@@ -367,10 +368,42 @@
     }
     return { ok: true, stage: guard.stage };
   }
-  function endNativeClick(token) {
+  function settleNativeRelease(guard) {
+    // Unity consumes mouse state in its frame loop, after DOM mouseup returns.
+    // Keep the cursor shield until subsequent frames have consumed the release.
+    return new Promise((resolve) => {
+      let frame;
+      let timer;
+      let frames = 0;
+      let done = false;
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        cancelAnimationFrame(frame);
+        guard.cancelFinish = null;
+        resolve(ok);
+      };
+      guard.cancelFinish = () => finish(false);
+      const tick = () => {
+        if (!nativeGuardValid(guard)) return finish(false);
+        if (++frames >= 3) return finish(true);
+        frame = requestAnimationFrame(tick);
+      };
+      timer = setTimeout(() => finish(false), 1000);
+      frame = requestAnimationFrame(tick);
+    });
+  }
+  async function endNativeClick(token) {
     const guard = nativeGuard;
     if (!guard || guard.token !== token) {
       if (nativePreparation?.token === token) clearNativeGuard();
+      return { ok: false, error: 'クリックの受付が終了しました。' };
+    }
+    if (guard.ending) return { ok: false, error: 'クリックの受付が終了しました。' };
+    guard.ending = true;
+    if (guard.stage === 'released' && !(await settleNativeRelease(guard))) {
+      if (nativeGuard === guard) clearNativeGuard();
       return { ok: false, error: 'クリックの受付が終了しました。' };
     }
     const result = {
@@ -432,11 +465,16 @@
       interrupt('interaction', event);
       return false;
     }
-    if (guard.stage === 'pressed' &&
-        (event.type === 'pointermove' || event.type === 'mousemove') && event.buttons === 0) {
-      // Chrome input does not move the physical cursor. Hover updates from that
-      // cursor must not cancel the owned press or reset the game's mouse state.
-      // Only button-free movement is suppressed, and only during this short hold.
+    const cursorEvent = ['pointermove', 'pointerrawupdate', 'mousemove',
+      'pointerover', 'pointerout', 'pointerenter', 'pointerleave',
+      'mouseover', 'mouseout', 'mouseenter', 'mouseleave'].includes(event.type);
+    const atPoint = Math.abs(event.clientX - guard.point.x) <= 2 &&
+      Math.abs(event.clientY - guard.point.y) <= 2;
+    if (cursorEvent && event.buttons === 0 && !(guard.stage === 'ready' && atPoint)) {
+      // The physical cursor is independent of Chrome's injected coordinates.
+      // Shield the complete operation, including preparation and frame processing
+      // after mouseup. Ending at mouseup lets a real move replace the game's
+      // cursor position before Unity consumes the queued button release.
       guard.cursorMovesIgnored += 1;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -454,7 +492,7 @@
     return false;
   }
 
-  const captureTypes = ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'mousedown', 'mousemove', 'mouseup', 'click', 'dblclick', 'contextmenu', 'wheel', 'keydown', 'keyup'];
+  const captureTypes = ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'pointerrawupdate', 'pointerover', 'pointerout', 'pointerenter', 'pointerleave', 'mouseover', 'mouseout', 'mouseenter', 'mouseleave', 'mousedown', 'mousemove', 'mouseup', 'click', 'dblclick', 'contextmenu', 'wheel', 'keydown', 'keyup'];
   for (const type of captureTypes) {
     window.addEventListener(type, (event) => {
       if (interceptCalibration(event)) return;
@@ -524,8 +562,8 @@
         respond(validateNativeClick(message.token));
         return false;
       case 'END_NATIVE_CLICK':
-        respond(endNativeClick(message.token));
-        return false;
+        endNativeClick(message.token).then(respond, () => respond({ ok: false, error: 'クリックの受付が終了しました。' }));
+        return true;
       case 'CLICK_REFRESH':
         respond({ ok: false, error: '拡張機能と雀魂のページを再読み込みしてください。' });
         return false;

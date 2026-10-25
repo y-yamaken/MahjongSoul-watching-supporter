@@ -77,7 +77,7 @@ function renderState(nextState) {
   const flag = value => value === true ? "あり" : value === false ? "なし" : "未計測";
   const seconds = value => Number.isFinite(value) ? (value / 1000).toFixed(2) + "秒" : "未計測";
   elements.diagnostics.value = attempt ? [
-    "0.3.3　更新" + attempt.number + "回目",
+    "0.3.4　更新" + attempt.number + "回目",
     "押下 " + seconds(attempt.actualHoldMs) + "（設定 " + seconds(attempt.configuredHoldMs) + "）" +
       (attempt.inputMethod === "chrome" ? (attempt.trustedPress && attempt.trustedRelease ? " Chrome入力確認済み" : " Chrome入力未確認") : "") +
       (attempt.cursorMovesIgnored > 0 ? " 移動除外 " + attempt.cursorMovesIgnored + "件" : ""),

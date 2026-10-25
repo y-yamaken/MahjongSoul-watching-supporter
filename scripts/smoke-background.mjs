@@ -115,12 +115,12 @@ const server = http.createServer((_request, response) => {
     "const ws=new WebSocket(" + JSON.stringify(origin?.replace("http:", "ws:") + "/socket") + ");ws.binaryType='arraybuffer';let index=0;",
     "ws.addEventListener('open',()=>fixture.connected=true);ws.addEventListener('message',()=>fixture.received++);",
     "function refresh(){const bytes=new Uint8Array(" + JSON.stringify([...requestFrame]) + ");index++;bytes[1]=index&255;bytes[2]=index>>8;ws.send(bytes);fixture.refreshes++}",
-    "let cursor={x:-1,y:-1},down=false,up=false,pressed=false,pressedAt=0;",
+    "let cursor={x:-1,y:-1},down=false,up=false,pressed=false,pressedAt=0,releaseFrames=0;",
     "canvas.addEventListener('mousemove',e=>{if(!e.isTrusted)return;cursor={x:e.clientX,y:e.clientY}});",
     "canvas.addEventListener('mousedown',e=>{if(!e.isTrusted){fixture.ignoredSynthetic++;return}fixture.trustedPresses++;cursor={x:e.clientX,y:e.clientY};down=true;pressedAt=performance.now()});",
-    "canvas.addEventListener('mouseup',e=>{if(!e.isTrusted){fixture.ignoredSynthetic++;return}fixture.trustedReleases++;cursor={x:e.clientX,y:e.clientY};up=true;fixture.lastHoldMs=performance.now()-pressedAt});",
+    "canvas.addEventListener('mouseup',e=>{if(!e.isTrusted){fixture.ignoredSynthetic++;return}fixture.trustedReleases++;cursor={x:e.clientX,y:e.clientY};up=true;releaseFrames=3;fixture.lastHoldMs=performance.now()-pressedAt});",
     "function frame(){const focused=document.hasFocus()&&document.activeElement===canvas;const inside=cursor.x>=innerWidth*.75&&cursor.x<=innerWidth*.95&&cursor.y>=innerHeight*.75&&cursor.y<=innerHeight*.85;",
-    "if(down){fixture.presses++;pressed=focused&&inside}if(up){fixture.releases++;if(pressed&&focused&&inside){fixture.clicks++;refresh()}else fixture.cancelled++;pressed=false}down=false;up=false;requestAnimationFrame(frame)}requestAnimationFrame(frame);",
+    "if(down){fixture.presses++;pressed=focused&&inside}if(up&&--releaseFrames<=0){fixture.releases++;if(pressed&&focused&&inside){fixture.clicks++;refresh()}else fixture.cancelled++;pressed=false;up=false}down=false;requestAnimationFrame(frame)}requestAnimationFrame(frame);",
     "</script></html>",
   ].join("\n"));
 });
@@ -182,7 +182,7 @@ try {
   await cdp.command("Runtime.runIfWaitingForDebugger", {}, swSession);
   await until(() => cdp.evaluate(swSession, "typeof globalThis.chrome?.notifications?.create === 'function'"), Boolean, "Extension APIs not initialized");
   await cdp.evaluate(swSession, "globalThis.__backgroundSmokeNotifications=[];const originalCreate=chrome.notifications.create.bind(chrome.notifications);chrome.notifications.create=async(...args)=>{const result=await originalCreate(...args);globalThis.__backgroundSmokeNotifications.push(args);return result;};true");
-  await cdp.evaluate(swSession, "globalThis.__backgroundDebuggerCommands=[];globalThis.__backgroundFocusStates=[];globalThis.__passiveMoveCount=0;const originalCommand=chrome.debugger.sendCommand.bind(chrome.debugger);chrome.debugger.sendCommand=async(...args)=>{globalThis.__backgroundDebuggerCommands.push(args[1]);if(args[1]==='Emulation.setFocusEmulationEnabled')globalThis.__backgroundFocusStates.push(args[2]?.enabled);const result=await originalCommand(...args);if(args[1]==='Input.dispatchMouseEvent'&&args[2]?.type==='mousePressed'){const target=args[0],p=args[2];setTimeout(()=>{globalThis.__passiveMoveCount++;originalCommand(target,'Input.dispatchMouseEvent',{type:'mouseMoved',x:Math.max(10,p.x-300),y:Math.max(10,p.y-100),button:'none',buttons:0,pointerType:'mouse'}).catch(()=>{});},50);}return result;};true");
+  await cdp.evaluate(swSession, "globalThis.__backgroundDebuggerCommands=[];globalThis.__backgroundFocusStates=[];globalThis.__passiveMoveCount=0;const originalCommand=chrome.debugger.sendCommand.bind(chrome.debugger);chrome.debugger.sendCommand=async(...args)=>{globalThis.__backgroundDebuggerCommands.push(args[1]);if(args[1]==='Emulation.setFocusEmulationEnabled')globalThis.__backgroundFocusStates.push(args[2]?.enabled);const result=await originalCommand(...args);if(args[1]==='Input.dispatchMouseEvent'&&['mousePressed','mouseReleased'].includes(args[2]?.type)){const target=args[0],p=args[2];for(const delay of [0,8,16,24,32,40,48,56,64])setTimeout(()=>{globalThis.__passiveMoveCount++;originalCommand(target,'Input.dispatchMouseEvent',{type:'mouseMoved',x:Math.max(10,p.x-300)+delay,y:Math.max(10,p.y-100),button:'none',buttons:0,pointerType:'mouse'}).catch(()=>{});},delay);}return result;};true");
   const gameTarget = (await cdp.command("Target.createTarget", { url: origin + "/", background: false })).targetId;
   const gameSession = await cdp.attach(gameTarget);
   await cdp.command("Runtime.enable", {}, gameSession);

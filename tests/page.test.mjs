@@ -5,7 +5,7 @@ import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../extension/page.js', import.meta.url), 'utf8');
 
-function fixture({ calibrationResponse = () => ({ ok: true }), animationDelay = 0, focused = true } = {}) {
+function fixture({ calibrationResponse = () => ({ ok: true }), animationDelay = 0, manualAnimation = false, focused = true } = {}) {
   const listeners = new Map();
   const documentListeners = new Map();
   const runtimeListeners = [];
@@ -13,6 +13,8 @@ function fixture({ calibrationResponse = () => ({ ok: true }), animationDelay = 
   const mouseEvents = [];
   const hosts = [];
   const timers = new Map();
+  const animationFrames = new Map();
+  let frameId = 0;
   let overlay = null;
   let obstruction = null;
   let clock = 1000;
@@ -77,8 +79,11 @@ function fixture({ calibrationResponse = () => ({ ok: true }), animationDelay = 
     screenX: 20,
     screenY: 30,
     performance: { now: () => clock + performance.now() },
-    requestAnimationFrame: (callback) => animationDelay ? setTimeout(callback, animationDelay) : queueMicrotask(callback),
-    cancelAnimationFrame: (frame) => clearTimeout(frame),
+    requestAnimationFrame: (callback) => {
+      if (manualAnimation) { animationFrames.set(++frameId, callback); return frameId; }
+      return animationDelay ? setTimeout(callback, animationDelay) : queueMicrotask(callback);
+    },
+    cancelAnimationFrame: (frame) => manualAnimation ? animationFrames.delete(frame) : clearTimeout(frame),
     setTimeout: (callback, milliseconds) => {
       const timer = setTimeout(() => { timers.delete(timer); callback(); }, milliseconds);
       if (milliseconds >= 1000) timer.unref();
@@ -129,6 +134,12 @@ function fixture({ calibrationResponse = () => ({ ok: true }), animationDelay = 
   };
   return {
     context, canvas, document, documentListeners, runtimeListeners, sent, mouseEvents, hosts, calibration, message, emit,
+    frame: () => {
+      const callbacks = [...animationFrames.values()];
+      animationFrames.clear();
+      for (const callback of callbacks) callback(clock);
+    },
+    get pendingFrames() { return animationFrames.size; },
     reinject: () => vm.runInContext(source, context),
     setObstruction: (value) => { obstruction = value; },
     setFocus: (value) => { focused = value; },
@@ -611,14 +622,88 @@ test('button-free cursor movement cannot cancel an owned press or reach the game
   assert.equal(f.sent.filter(item => item.type === 'PAGE_INTERACTION').length, 0);
 });
 
-test('ordinary movement is not suppressed before pressing, after release, or after stopping', async () => {
+test('cursor shielding covers preparation and release, then ends between clicks and after stopping', async () => {
   const f = fixture();
   await f.message('ARM_PAGE');
-  await prepare(f);
   assert.equal(nativeEvent(f, 'pointermove', { clientX: 950, buttons: 0 }).stopped, false);
+  await prepare(f);
+  assert.equal(nativeEvent(f, 'pointermove', { clientX: 950, buttons: 0 }).stopped, true);
+  assert.equal(nativeEvent(f, 'mousemove', { buttons: 0 }).stopped, false, 'the initial native move to the button reaches the game');
   press(f);
   release(f);
+  assert.equal(nativeEvent(f, 'pointermove', { clientX: 950, buttons: 0 }).stopped, true);
+  await f.message('END_NATIVE_CLICK', { token: 'native' });
   assert.equal(nativeEvent(f, 'pointermove', { clientX: 950, buttons: 0 }).stopped, false);
   await f.message('DISARM_PAGE');
   assert.equal(nativeEvent(f, 'pointermove', { clientX: 950, buttons: 0 }).stopped, false);
+});
+
+test('cursor boundary events and raw moves cannot change game hover state during a native click', async () => {
+  const f = fixture();
+  await f.message('ARM_PAGE');
+  await prepare(f);
+  for (const stage of ['ready', 'pressed', 'released']) {
+    if (stage === 'pressed') press(f);
+    if (stage === 'released') release(f);
+    for (const type of ['pointerrawupdate', 'pointerover', 'pointerout', 'pointerenter', 'pointerleave',
+      'mouseover', 'mouseout', 'mouseenter', 'mouseleave']) {
+      const moved = nativeEvent(f, type, { clientX: 950, buttons: 0 });
+      assert.equal(moved.stopped, true, stage + ' ' + type);
+    }
+  }
+  assert.equal((await f.message('END_NATIVE_CLICK', { token: 'native' })).ok, true);
+  assert.equal(f.sent.filter(item => item.type === 'PAGE_INTERACTION').length, 0);
+});
+
+test('release shielding remains until the game has had three frames to consume mouseup', async () => {
+  const f = fixture({ manualAnimation: true });
+  await f.message('ARM_PAGE');
+  await prepare(f);
+  press(f);
+  f.advanceClock(1000);
+  release(f);
+  let ended = false;
+  const ending = f.message('END_NATIVE_CLICK', { token: 'native' }).then(result => { ended = true; return result; });
+  for (let frame = 0; frame < 3; frame++) {
+    assert.equal(ended, false);
+    assert.equal(nativeEvent(f, 'mousemove', { clientX: 950, buttons: 0 }).stopped, true);
+    f.frame();
+    await flush();
+  }
+  const result = await ending;
+  assert.equal(result.ok, true);
+  assert.ok(result.actualHoldMs >= 1000);
+  assert.equal(f.pendingFrames, 0);
+  assert.equal(nativeEvent(f, 'mousemove', { clientX: 950, buttons: 0 }).stopped, false);
+});
+
+test('stopping or a stalled frame loop releases the cursor shield and resolves pending completion', async () => {
+  for (const timeout of [false, true]) {
+    const f = fixture({ manualAnimation: true });
+    await f.message('ARM_PAGE');
+    await prepare(f);
+    press(f);
+    release(f);
+    const ending = f.message('END_NATIVE_CLICK', { token: 'native' });
+    if (timeout) f.fireTimer(1000);
+    else await f.message('DISARM_PAGE');
+    assert.equal((await ending).ok, false);
+    assert.equal(f.pendingFrames, 0);
+    assert.equal(nativeEvent(f, 'mousemove', { clientX: 950, buttons: 0 }).stopped, false);
+  }
+});
+
+test('a cancelled end cannot clear the cursor shield of a new click', async () => {
+  const f = fixture({ manualAnimation: true });
+  await f.message('ARM_PAGE');
+  await prepare(f, 'old');
+  press(f);
+  release(f);
+  const ending = f.message('END_NATIVE_CLICK', { token: 'old' });
+  await f.message('ARM_PAGE');
+  await prepare(f, 'new');
+  assert.equal((await ending).ok, false);
+  assert.equal((await f.message('VALIDATE_NATIVE_CLICK', { token: 'new' })).stage, 'ready');
+  assert.equal(nativeEvent(f, 'mousemove', { clientX: 950, buttons: 0 }).stopped, true);
+  await f.message('DISARM_PAGE');
 });

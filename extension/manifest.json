@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "雀魂 観戦ウォッチ",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "バックグラウンドで観戦一覧を定期更新し、指定ユーザー名を検出して通知します。",
   "minimum_chrome_version": "120",
   "permissions": [

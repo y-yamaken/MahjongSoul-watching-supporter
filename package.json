@@ -1,6 +1,6 @@
 {
   "name": "mahjongsoul-watching-supporter",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "private": true,
   "type": "module",
   "description": "雀魂の観戦一覧を更新してWindowsに通知するChrome拡張",
