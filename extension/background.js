@@ -236,7 +236,7 @@ async function processSnapshot(tabId, snapshot) {
     const names = [...new Set(plan.fresh.map(match => match.nickname))];
     await chrome.notifications.create(id, {
       type: "basic", iconUrl: "icons/icon128.png", title: "観戦一覧で見つかりました",
-      message: names.join("、") + " さん", contextMessage: "雀魂 観戦ウォッチ",
+      message: names.join("、"), contextMessage: "雀魂 観戦ウォッチ",
     });
   }
   if (!(await isCurrent(run))) return;
