@@ -462,7 +462,11 @@ test("concurrent automatic stops notify once, and a new monitoring session can n
   app.monitor();
   await app.sendPage("PAGE_INTERACTION", failure);
   assert.equal(app.notifications.length, 2);
-  assert.equal(app.notifications[1].id, app.notifications[0].id, "replace an old visible stop notice instead of piling them up");
+  assert.notEqual(app.notifications[1].id, app.notifications[0].id, "each new stop needs a new Windows toast tag to alert again");
+  for (const notice of app.notifications) {
+    assert.equal(notice.silent, false);
+    assert.equal(app.session.stoppedNotificationTabs[notice.id], 7);
+  }
 });
 
 test("clicking a stop notification opens its watched game tab", async () => {
@@ -522,4 +526,27 @@ test("closing or navigating the watched tab notifies only while monitoring", asy
     await app.send("STOP");
     assert.equal(app.notifications.length, 1);
   }
+});
+
+
+test("old stop notifications still open their original tab after a later stop", async () => {
+  const app = await setup();
+  app.monitor();
+  await app.sendPage("PAGE_INTERACTION", { reason: "resize" });
+  const first = app.notifications[0];
+  app.session.monitor = { enabled: true, tabId: 8, token: "second-tab", startedAt: 0 };
+  await app.sendPage("PAGE_INTERACTION", { reason: "resize" }, { id: 8, url: calibration.url });
+  assert.equal(app.session.stoppedNotificationTabs[first.id], 7);
+  assert.equal(app.session.stoppedNotificationTabs[app.notifications[1].id], 8);
+  app.events.notificationClicked(first.id);
+  await waitFor(() => app.windowActions.length === 2);
+  assert.deepEqual(app.windowActions[1], ["tab", 7, { active: true }]);
+});
+
+test("a notification left by version 0.3.5 remains clickable", async () => {
+  const app = await setup();
+  app.session.stoppedNotificationTabId = 7;
+  app.events.notificationClicked("spectator-monitor-stopped");
+  await waitFor(() => app.windowActions.length === 2);
+  assert.deepEqual(app.windowActions[1], ["tab", 7, { active: true }]);
 });

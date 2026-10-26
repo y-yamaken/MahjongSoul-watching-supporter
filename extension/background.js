@@ -12,7 +12,8 @@ let controlQueue = Promise.resolve();
 let networkQueue = Promise.resolve();
 let statusQueue = Promise.resolve();
 let stopQueue = Promise.resolve();
-const STOP_NOTIFICATION_ID = "spectator-monitor-stopped";
+const LEGACY_STOP_NOTIFICATION_ID = "spectator-monitor-stopped";
+const STOP_NOTIFICATION_PREFIX = LEGACY_STOP_NOTIFICATION_ID + "-";
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const initialStatus = { state: "stopped", message: "更新ボタンを指定してください。", checkedAt: null, matchedNames: [] };
 const liveKey = tabId => "live:" + tabId;
@@ -70,10 +71,16 @@ function statusFor(run, patch) {
   return task;
 }
 async function notifyStopped(tabId, message) {
-  await chrome.storage.session.set({ stoppedNotificationTabId: tabId });
-  await chrome.notifications.create(STOP_NOTIFICATION_ID, {
+  // Windows can suppress the popup for a notification whose tag already exists.
+  // Deduplicate the stop transition, not its ID: each new failure is a new toast.
+  const id = STOP_NOTIFICATION_PREFIX + crypto.randomUUID();
+  const { stoppedNotificationTabs = {} } = await chrome.storage.session.get("stoppedNotificationTabs");
+  const tabs = Object.fromEntries(Object.entries(stoppedNotificationTabs).slice(-49));
+  tabs[id] = tabId;
+  await chrome.storage.session.set({ stoppedNotificationTabs: tabs });
+  await chrome.notifications.create(id, {
     type: "basic", iconUrl: "icons/icon128.png", title: "監視が停止しました",
-    message, contextMessage: "雀魂 観戦ウォッチ",
+    message, contextMessage: "雀魂 観戦ウォッチ", silent: false,
   });
 }
 function stop(message = "監視を停止しました。", { notify = false } = {}) {
@@ -520,8 +527,12 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 });
 chrome.notifications.onClicked.addListener(notificationId => {
   void (async () => {
-    const { notificationTabs = {}, stoppedNotificationTabId } = await chrome.storage.session.get(["notificationTabs", "stoppedNotificationTabId"]);
-    const tabId = notificationId === STOP_NOTIFICATION_ID ? stoppedNotificationTabId : notificationTabs[notificationId];
+    const { notificationTabs = {}, stoppedNotificationTabs = {}, stoppedNotificationTabId } = await chrome.storage.session.get([
+      "notificationTabs", "stoppedNotificationTabs", "stoppedNotificationTabId",
+    ]);
+    const tabId = notificationId === LEGACY_STOP_NOTIFICATION_ID
+      ? stoppedNotificationTabId
+      : stoppedNotificationTabs[notificationId] ?? notificationTabs[notificationId];
     if (tabId === undefined) return;
     try {
       const tab = await chrome.tabs.get(tabId);

@@ -291,11 +291,23 @@ try {
   // Exercise an automatic stop through the real content-script message path.
   const failMonitoring = () => cdp.evaluate(controllerSession, "(async()=>{await chrome.scripting.executeScript({target:{tabId:" + tab.id + "},world:'ISOLATED',func:()=>chrome.runtime.sendMessage({type:'PAGE_INTERACTION',reason:'native-invalidated',detail:{event:'pointermove',stage:'pressed'}})});return true})()");
   await failMonitoring();
-  const stopNotices = await cdp.evaluate(swSession, "globalThis.__backgroundSmokeNotifications.filter(args=>args[1].title==='監視が停止しました')");
+  let stopNotices = await cdp.evaluate(swSession, "globalThis.__backgroundSmokeNotifications.filter(args=>args[1].title==='監視が停止しました')");
   assert.equal(stopNotices.length, 1);
   assert.match(stopNotices[0][1].message, /自動クリック中/);
   await failMonitoring();
   assert.equal(await cdp.evaluate(swSession, "globalThis.__backgroundSmokeNotifications.length"), 2, "the stopped run must not notify twice");
+  // Re-enable a monitored session without dismissing the previous stop toast.
+  // The next failure must create a new Windows tag and retain sound enabled.
+  await cdp.evaluate(swSession, "(async()=>{await __backgroundSmokeApi.ensureBackgroundAccess(" + tab.id + ");await chrome.storage.session.set({monitor:{enabled:true,tabId:" + tab.id + ",token:crypto.randomUUID(),startedAt:Date.now()}});return true})()");
+  await failMonitoring();
+  stopNotices = await cdp.evaluate(swSession, "globalThis.__backgroundSmokeNotifications.filter(args=>args[1].title==='監視が停止しました')");
+  assert.equal(stopNotices.length, 2);
+  assert.notEqual(stopNotices[0][0], stopNotices[1][0], "new failures must not reuse a Windows toast tag");
+  assert.ok(stopNotices.every(args => args[1].silent === false));
+  const stoppedTabs = await cdp.evaluate(swSession, "(async()=>(await chrome.storage.session.get('stoppedNotificationTabs')).stoppedNotificationTabs)()");
+  assert.ok(stopNotices.every(args => stoppedTabs[args[0]] === tab.id));
+  await failMonitoring();
+  assert.equal(await cdp.evaluate(swSession, "globalThis.__backgroundSmokeNotifications.length"), 3);
   await pause(150);
   const afterStop = await pageState();
   const session = await cdp.evaluate(controllerSession, "chrome.storage.session.get(['backgroundTabId','monitor'])");
