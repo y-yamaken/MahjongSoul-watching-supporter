@@ -28,7 +28,7 @@ async function initialize() {
   const { monitor, status } = await chrome.storage.session.get(["monitor", "status"]);
   if (!status) await chrome.storage.session.set({ status: initialStatus });
   if (monitor?.enabled && !(await chrome.alarms.get(ALARM_NAME))) {
-    await chrome.alarms.create(ALARM_NAME, { periodInMinutes: (settings?.intervalSeconds ?? 60) / 60 });
+    await chrome.alarms.create(ALARM_NAME, { periodInMinutes: (settings?.intervalSeconds ?? 300) / 60 });
   }
 }
 const ready = initialize();

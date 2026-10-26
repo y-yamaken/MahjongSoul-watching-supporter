@@ -1,4 +1,4 @@
-export const DEFAULT_SETTINGS = Object.freeze({ names: [], intervalSeconds: 60, clickHoldMs: 500 });
+export const DEFAULT_SETTINGS = Object.freeze({ names: [], intervalSeconds: 300, clickHoldMs: 500 });
 export const ALARM_NAME = "watch-spectators";
 export const GAME_ORIGIN = "https://game.mahjongsoul.com";
 

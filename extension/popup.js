@@ -119,7 +119,7 @@ async function refreshState() {
     if (sequence !== readSequence) return;
     if (!initialized) {
       elements.names.value = (result.settings?.names ?? []).join("\n");
-      elements.interval.value = String(result.settings?.intervalSeconds ?? 60);
+      elements.interval.value = String(result.settings?.intervalSeconds ?? 300);
       elements.hold.value = String((result.settings?.clickHoldMs ?? 500) / 1000);
       initialized = true;
       clearError();
