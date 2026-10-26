@@ -288,7 +288,14 @@ try {
   const interactionEvents = await cdp.evaluate(swSession, "globalThis.__backgroundSmokeEvents");
   const notifications = await cdp.evaluate(swSession, "globalThis.__backgroundSmokeNotifications.length");
   assert.equal(notifications, 1);
-  await cdp.evaluate(swSession, "__backgroundSmokeApi.stop()");
+  // Exercise an automatic stop through the real content-script message path.
+  const failMonitoring = () => cdp.evaluate(controllerSession, "(async()=>{await chrome.scripting.executeScript({target:{tabId:" + tab.id + "},world:'ISOLATED',func:()=>chrome.runtime.sendMessage({type:'PAGE_INTERACTION',reason:'native-invalidated',detail:{event:'pointermove',stage:'pressed'}})});return true})()");
+  await failMonitoring();
+  const stopNotices = await cdp.evaluate(swSession, "globalThis.__backgroundSmokeNotifications.filter(args=>args[1].title==='監視が停止しました')");
+  assert.equal(stopNotices.length, 1);
+  assert.match(stopNotices[0][1].message, /自動クリック中/);
+  await failMonitoring();
+  assert.equal(await cdp.evaluate(swSession, "globalThis.__backgroundSmokeNotifications.length"), 2, "the stopped run must not notify twice");
   await pause(150);
   const afterStop = await pageState();
   const session = await cdp.evaluate(controllerSession, "chrome.storage.session.get(['backgroundTabId','monitor'])");
@@ -322,7 +329,7 @@ try {
     scope: fullPeriodicTest ? "raw CDP full periodic background test" : "raw CDP component test",
     periodicAlarmRefreshes: fullPeriodicTest ? 2 : 0,
     viewportEvidence, interactionEvents,
-    hiddenPlayerDetected: hiddenName, notificationsCreated: notifications,
+    hiddenPlayerDetected: hiddenName, matchNotificationsCreated: notifications, stopNotificationsCreated: stopNotices.length,
     afterStop: { focused: afterStop.focused, visibility: afterStop.visibility },
     focusEmulationDisabled: focusStates.at(-1) === false,
     debuggerReleased: connectionReleased, monitorStopped: session.monitor.enabled === false,

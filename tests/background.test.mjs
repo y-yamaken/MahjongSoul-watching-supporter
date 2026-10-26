@@ -30,7 +30,7 @@ async function waitFor(condition) {
   }
   assert.fail("Timed out waiting for background operation");
 }
-async function setup({ armFails = false, inspectionFails = false, active = true, hookReady = true, focused = true, minimized = false, attachFails = false, loseFocusAtClick = false, deliverResponse = true, observeRequest = true, advanceClock = null } = {}) {
+async function setup({ armFails = false, inspectionFails = false, active = true, hookReady = true, focused = true, minimized = false, attachFails = false, loseFocusAtClick = false, deliverResponse = true, observeRequest = true, advanceClock = null, notificationFails = false, prepareError = null } = {}) {
   // The imported helper is shared by background-module instances; dispose its
   // previous fixture connection while the previous mock is still installed.
   if (globalThis.chrome?.debugger) {
@@ -99,6 +99,7 @@ async function setup({ armFails = false, inspectionFails = false, active = true,
         }
         if (message.type === "ARM_PAGE" && armFails) throw new Error("Missing content script");
         if (message.type === "PREPARE_NATIVE_CLICK") {
+          if (prepareError) return { ok: false, ...prepareError };
           if (loseFocusAtClick || !(emulated || focused)) {
             loseFocusAtClick = false; focused = false;
             return { ok: false, code: "FOCUS_REQUIRED", error: "バックグラウンド実行を確認してください。" };
@@ -171,7 +172,7 @@ async function setup({ armFails = false, inspectionFails = false, active = true,
     scripting: { executeScript: async () => [] },
     notifications: {
       getPermissionLevel: async () => "granted",
-      create: async (id, details) => { notifications.push({ id, ...details }); return id; },
+      create: async (id, details) => { if (notificationFails) throw new Error("Notifications unavailable"); notifications.push({ id, ...details }); return id; },
       onClicked: event("notificationClicked"),
     },
     action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {} },
@@ -186,6 +187,7 @@ async function setup({ armFails = false, inspectionFails = false, active = true,
   return {
     send, sendPage, session, local, notifications, sent, events, debuggerCalls, windowActions,
     get attached() { return attached; },
+    get alarm() { return alarm; },
     get emulated() { return emulated; },
     detachExternally() {
       attached = null; emulated = false;
@@ -307,6 +309,7 @@ test("start failure or missing network hook leaves monitoring stopped", async ()
     assert.equal(app.session.monitor.enabled, false);
     assert.equal(app.attached, null);
     if (options.attachFails) assert.equal(app.debuggerCalls.some(call => call[0] === "detach"), false);
+    assert.equal(app.notifications.length, options.armFails ? 1 : 0, "only a failure after enabling monitoring sends a stop notification");
   }
 });
 
@@ -352,7 +355,9 @@ test("timeout preserves holding-time diagnostics and separates missing request f
     assert.equal(app.session.status.lastAttempt.requestObserved, observeRequest);
     assert.equal(app.session.status.lastAttempt.responseReceived, false);
     assert.match(app.session.status.message, observeRequest ? /一覧の応答/ : /更新要求を確認できず/);
-    assert.equal(app.notifications.length, 0);
+    await waitFor(() => app.notifications.length === 1 && app.attached === null);
+    assert.equal(app.notifications[0].title, "監視が停止しました");
+    assert.equal(app.notifications[0].message, app.session.status.message);
   }
 });
 
@@ -360,7 +365,9 @@ test("a manual stop preserves the most recent successful attempt diagnostics", a
   const app = await setup();
   await app.send("START", { settings: { ...settings, clickHoldMs: 1000 } });
   await waitFor(() => app.session.status?.lastAttempt?.responseReceived);
+  const notices = app.notifications.length;
   await app.send("STOP");
+  assert.equal(app.notifications.length, notices, "manual STOP must not notify");
   assert.equal(app.session.status.lastAttempt.actualHoldMs, 1000);
   assert.equal(app.session.status.lastAttempt.requestObserved, true);
   assert.equal(app.session.status.lastAttempt.responseReceived, true);
@@ -392,6 +399,8 @@ test("user cancellation of the browser connection stops monitoring without recon
   app.detachExternally();
   await waitFor(() => !app.session.monitor.enabled && app.session.backgroundTabId === undefined);
   assert.match(app.session.status.message, /解除/);
+  await waitFor(() => app.notifications.some(notice => notice.title === "監視が停止しました"));
+  assert.equal(app.notifications.filter(notice => notice.title === "監視が停止しました").length, 1);
   await app.sendPage("PAGE_FOCUSED");
   assert.equal(app.debuggerCalls.filter(call => call[0] === "attach").length, attaches);
   assert.equal(app.attached, null);
@@ -405,6 +414,7 @@ test("cancelling point selection releases background access before monitoring st
   assert.equal(app.attached, null);
   assert.equal(app.session.backgroundTabId, undefined);
   assert.equal(app.session.monitor.enabled, false);
+  assert.equal(app.notifications.length, 0);
 });
 
 test("the configured holding duration is used for Chrome input, not synthetic page clicks", async () => {
@@ -435,4 +445,81 @@ test("unexpected automatic input is distinguished from manual operation and reta
   assert.equal(app.session.status.lastAttempt.interruption.stage, "ready");
   assert.equal(app.session.status.lastAttempt.interruption.expectedX, 100);
   assert.equal("key" in app.session.status.lastAttempt.interruption, false);
+});
+
+
+test("concurrent automatic stops notify once, and a new monitoring session can notify again", async () => {
+  const app = await setup();
+  app.monitor();
+  const failure = { reason: "native-invalidated", detail: { event: "pointermove", stage: "pressed" } };
+  await Promise.all(Array.from({ length: 4 }, () => app.sendPage("PAGE_INTERACTION", failure)));
+  assert.equal(app.session.monitor.enabled, false);
+  assert.equal(app.notifications.length, 1);
+  assert.match(app.notifications[0].message, /自動クリック中/);
+  await app.sendPage("PAGE_INTERACTION", failure);
+  await app.send("STOP");
+  assert.equal(app.notifications.length, 1);
+  app.monitor();
+  await app.sendPage("PAGE_INTERACTION", failure);
+  assert.equal(app.notifications.length, 2);
+  assert.equal(app.notifications[1].id, app.notifications[0].id, "replace an old visible stop notice instead of piling them up");
+});
+
+test("clicking a stop notification opens its watched game tab", async () => {
+  const app = await setup();
+  app.monitor();
+  await app.sendPage("PAGE_INTERACTION", { reason: "resize" });
+  assert.equal(app.notifications.length, 1);
+  assert.match(app.notifications[0].message, /画面サイズ/);
+  app.events.notificationClicked(app.notifications[0].id);
+  await waitFor(() => app.windowActions.length === 2);
+  assert.deepEqual(app.windowActions, [["window", 2, { focused: true }], ["tab", 7, { active: true }]]);
+});
+
+test("failed stop notification delivery cannot interrupt stopping and debugger cleanup", async t => {
+  const errors = [];
+  t.mock.method(console, "error", (...args) => { errors.push(args); });
+  const app = await setup({ notificationFails: true });
+  await app.send("CALIBRATE", { settings });
+  app.monitor();
+  assert.equal(app.attached, 7);
+  const result = await app.sendPage("PAGE_INTERACTION", { reason: "resize" });
+  assert.equal(result.ok, true);
+  assert.equal(app.session.monitor.enabled, false);
+  assert.equal(app.attached, null);
+  assert.equal(app.emulated, false);
+  assert.equal(app.alarm, null);
+  assert.ok(app.sent.includes("DISARM_PAGE"));
+  assert.equal(app.notifications.length, 0);
+  assert.equal(errors.length, 1);
+});
+
+test("a fatal click timeout notifies with the failure reason", async () => {
+  const error = { code: "BACKGROUND_CLICK_TIMEOUT", error: "クリック操作が5秒以内に完了しなかったため、監視を停止しました。" };
+  const app = await setup({ prepareError: error });
+  await app.send("START", { settings });
+  await waitFor(() => !app.session.monitor.enabled && app.notifications.length === 1 && app.attached === null);
+  assert.equal(app.notifications[0].message, error.error);
+});
+
+test("an error that waits for retry does not send a stop notification", async () => {
+  const app = await setup({ loseFocusAtClick: true });
+  await app.send("START", { settings });
+  await waitFor(() => app.session.status.state === "waiting");
+  assert.equal(app.session.monitor.enabled, true);
+  assert.equal(app.notifications.length, 0);
+  await app.send("STOP");
+});
+
+test("closing or navigating the watched tab notifies only while monitoring", async () => {
+  for (const type of ["removed", "updated"]) {
+    const app = await setup();
+    app.monitor();
+    app.events[type](7, { status: "loading" });
+    await waitFor(() => !app.session.monitor.enabled && app.notifications.length === 1);
+    assert.match(app.notifications[0].message, type === "removed" ? /タブを閉じた/ : /ページが移動/);
+    app.events[type](7, { status: "loading" });
+    await app.send("STOP");
+    assert.equal(app.notifications.length, 1);
+  }
 });

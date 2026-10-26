@@ -11,6 +11,8 @@ let pendingFocusResume = null;
 let controlQueue = Promise.resolve();
 let networkQueue = Promise.resolve();
 let statusQueue = Promise.resolve();
+let stopQueue = Promise.resolve();
+const STOP_NOTIFICATION_ID = "spectator-monitor-stopped";
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const initialStatus = { state: "stopped", message: "更新ボタンを指定してください。", checkedAt: null, matchedNames: [] };
 const liveKey = tabId => "live:" + tabId;
@@ -67,21 +69,43 @@ function statusFor(run, patch) {
   statusQueue = task.catch(() => {});
   return task;
 }
-async function stop(message = "監視を停止しました。") {
-  epoch += 1;
-  const { monitor, status, pendingCalibration } = await chrome.storage.session.get(["monitor", "status", "pendingCalibration"]);
-  await chrome.storage.session.set({
-    monitor: { enabled: false, tabId: monitor?.tabId ?? null },
-    status: { ...initialStatus, ...status, state: "stopped", message },
+async function notifyStopped(tabId, message) {
+  await chrome.storage.session.set({ stoppedNotificationTabId: tabId });
+  await chrome.notifications.create(STOP_NOTIFICATION_ID, {
+    type: "basic", iconUrl: "icons/icon128.png", title: "監視が停止しました",
+    message, contextMessage: "雀魂 観戦ウォッチ",
   });
-  await chrome.alarms.clear(ALARM_NAME);
-  await chrome.action.setBadgeText({ text: "" });
-  if (monitor?.tabId) await chrome.tabs.sendMessage(monitor.tabId, { type: "DISARM_PAGE" }).catch(() => {});
-  await chrome.storage.session.remove("pendingCalibration");
-  if (pendingCalibration?.tabId) {
-    await chrome.tabs.sendMessage(pendingCalibration.tabId, { type: "CANCEL_CALIBRATION" }).catch(() => {});
-  }
-  await releaseBackgroundAccess().catch(reportUnexpected);
+}
+function stop(message = "監視を停止しました。", { notify = false } = {}) {
+  // Invalidate running clicks immediately, then serialize the enabled-to-stopped
+  // transition so concurrent failure signals cannot send duplicate alerts.
+  epoch += 1;
+  const task = stopQueue.then(async () => {
+    const { monitor, status, pendingCalibration } = await chrome.storage.session.get(["monitor", "status", "pendingCalibration"]);
+    const shouldNotify = notify && monitor?.enabled === true;
+    await chrome.storage.session.set({
+      monitor: { enabled: false, tabId: monitor?.tabId ?? null },
+      status: { ...initialStatus, ...status, state: "stopped", message },
+    });
+    // A notification failure must not prevent input cleanup or recurse into stop.
+    const notification = shouldNotify
+      ? notifyStopped(monitor.tabId, message).catch(reportUnexpected)
+      : Promise.resolve();
+    try {
+      await chrome.alarms.clear(ALARM_NAME);
+      await chrome.action.setBadgeText({ text: "" });
+      if (monitor?.tabId) await chrome.tabs.sendMessage(monitor.tabId, { type: "DISARM_PAGE" }).catch(() => {});
+      await chrome.storage.session.remove("pendingCalibration");
+      if (pendingCalibration?.tabId) {
+        await chrome.tabs.sendMessage(pendingCalibration.tabId, { type: "CANCEL_CALIBRATION" }).catch(() => {});
+      }
+      await releaseBackgroundAccess().catch(reportUnexpected);
+    } finally {
+      await notification;
+    }
+  });
+  stopQueue = task.catch(() => {});
+  return task;
 }
 async function activeGameTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -158,7 +182,7 @@ async function calibrate(settings) {
     await pageMessage(tab.id, { type: "CALIBRATE_PAGE" });
     return state();
   } catch (error) {
-    await stop(error.message);
+    await stop(error.message, { notify: true });
     throw error;
   }
 }
@@ -250,6 +274,7 @@ async function processSnapshot(tabId, snapshot) {
 }
 
 async function start(settings) {
+  await stopQueue;
   if (running) throw new Error("前回の更新が終了してから、監視を開始してください。");
   const saved = validateSettings(settings);
   const tab = await activeGameTab();
@@ -279,7 +304,7 @@ async function start(settings) {
     void check().catch(reportUnexpected);
     return state();
   } catch (error) {
-    await stop(error.message);
+    await stop(error.message, { notify: true });
     throw error;
   }
 }
@@ -358,12 +383,12 @@ async function check() {
       await patchAttempt(run, { requestObserved, responseReceived: false });
       await stop(requestObserved
         ? "更新要求を検出しましたが、一覧の応答を確認できず停止しました。"
-        : "クリック後の更新要求を確認できず停止しました。「動作確認」の診断を確認してください。");
+        : "クリック後の更新要求を確認できず停止しました。「動作確認」の診断を確認してください。", { notify: true });
     }
   } catch (error) {
     if (run && await isCurrent(run)) {
       if (["BACKGROUND_CAPTURE_TIMEOUT", "BACKGROUND_CLICK_TIMEOUT"].includes(error.code)) {
-        await stop(error.message);
+        await stop(error.message, { notify: true });
       } else {
         await statusFor(run, {
           state: "waiting", waitReason: error.code === "FOCUS_REQUIRED" ? "focus" : null,
@@ -423,7 +448,7 @@ async function handleMessage(message, sender) {
               : detail && detail.stage !== "none"
                 ? "自動クリック中に想定外の入力を検出したため停止しました。"
                 : "ゲーム画面の入力を検出したため停止しました。";
-          await stop(messageText);
+          await stop(messageText, { notify: true });
         }
         return { ok: true };
       }
@@ -469,7 +494,7 @@ chrome.debugger.onDetach.addListener(source => {
   void ready.then(async () => {
     const wasOwned = await forgetBackgroundAccess(source.tabId);
     if (!wasOwned) return;
-    await stop("Chromeのバックグラウンド接続が解除されたため停止しました。");
+    await stop("Chromeのバックグラウンド接続が解除されたため停止しました。", { notify: true });
     const { calibration } = await chrome.storage.session.get("calibration");
     if (calibration?.tabId === source.tabId) await chrome.storage.session.remove("calibration");
   }).catch(reportUnexpected);
@@ -477,7 +502,7 @@ chrome.debugger.onDetach.addListener(source => {
 chrome.tabs.onRemoved.addListener(tabId => {
   void ready.then(async () => {
     const { monitor, calibration } = await chrome.storage.session.get(["monitor", "calibration"]);
-    if (monitor?.tabId === tabId) await stop("雀魂のタブを閉じたため停止しました。");
+    if (monitor?.tabId === tabId) await stop("雀魂のタブを閉じたため停止しました。", { notify: true });
     if (calibration?.tabId === tabId) await chrome.storage.session.remove("calibration");
     await chrome.storage.session.remove([liveKey(tabId), requestKey(tabId)]);
     await releaseBackgroundAccess(tabId).catch(() => {});
@@ -487,7 +512,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.status !== "loading" && !change.url) return;
   void ready.then(async () => {
     const { monitor, calibration } = await chrome.storage.session.get(["monitor", "calibration"]);
-    if (monitor?.enabled && monitor.tabId === tabId) await stop("ページが移動したため停止しました。更新ボタンを指定し直してください。");
+    if (monitor?.enabled && monitor.tabId === tabId) await stop("ページが移動したため停止しました。更新ボタンを指定し直してください。", { notify: true });
     if (calibration?.tabId === tabId) await chrome.storage.session.remove("calibration");
     await chrome.storage.session.remove([liveKey(tabId), requestKey(tabId)]);
     await releaseBackgroundAccess(tabId).catch(() => {});
@@ -495,8 +520,8 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 });
 chrome.notifications.onClicked.addListener(notificationId => {
   void (async () => {
-    const { notificationTabs = {} } = await chrome.storage.session.get("notificationTabs");
-    const tabId = notificationTabs[notificationId];
+    const { notificationTabs = {}, stoppedNotificationTabId } = await chrome.storage.session.get(["notificationTabs", "stoppedNotificationTabId"]);
+    const tabId = notificationId === STOP_NOTIFICATION_ID ? stoppedNotificationTabId : notificationTabs[notificationId];
     if (tabId === undefined) return;
     try {
       const tab = await chrome.tabs.get(tabId);
