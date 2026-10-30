@@ -3,7 +3,7 @@
   "version": "0.3.5",
   "private": true,
   "type": "module",
-  "description": "雀魂の観戦一覧を更新してWindowsに通知するChrome拡張",
+  "description": "雀魂の観戦一覧を更新してWindowsに通知するChrome・Edge拡張",
   "scripts": {
     "prepare:vendor": "node scripts/prepare-vendor.mjs",
     "test": "node --test",
@@ -11,7 +11,8 @@
     "test:ocr": "node scripts/smoke-ocr.mjs",
     "build": "node scripts/build-network.mjs",
     "test:network": "node scripts/smoke-network.mjs",
-    "test:background": "node scripts/smoke-background.mjs"
+    "test:background": "node scripts/smoke-background.mjs",
+    "test:edge": "node scripts/smoke-edge.mjs"
   },
   "dependencies": {
     "tesseract.js": "6.0.1",

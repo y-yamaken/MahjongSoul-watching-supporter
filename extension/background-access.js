@@ -119,7 +119,7 @@ export function ensureBackgroundAccess(tabId) {
       if (!connection) {
         try { await chrome.debugger.attach({ tabId }, "1.3"); }
         catch (cause) {
-          throw new Error("Chromeの操作機能に接続できませんでした。雀魂の開発者ツールや、同じタブを操作している拡張機能を閉じてください。", { cause });
+          throw new Error("ブラウザーの操作機能に接続できませんでした。雀魂の開発者ツールや、同じタブを操作している拡張機能を閉じてください。", { cause });
         }
         connection = { tabId, stopping: false, forgotten: false };
         current = connection;

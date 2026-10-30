@@ -348,6 +348,9 @@ try {
     fixtureOrigin: "localhost-only", gameServerRequests: 0, errors: cdp.errors,
   }, null, 2));
 } finally {
+  // Edge may relaunch its executable for compatibility, so stopping only the
+  // original child process can leave the temporary browser and fixture alive.
+  if (cdp) await cdp.command("Browser.close").catch(() => {});
   cdp?.close();
   if (browser) {
     browser.kill();

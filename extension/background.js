@@ -295,7 +295,7 @@ async function start(settings) {
     let liveState;
     try { liveState = await chrome.tabs.sendMessage(tab.id, { type: "GET_LIVE_STATE" }); } catch {}
     if (!liveState?.ok || !liveState.hookReady) throw new Error("通信監視を準備するため、雀魂のページを再読み込みしてください。");
-    if (await chrome.notifications.getPermissionLevel() !== "granted") throw new Error("Chromeの通知を許可してください。");
+    if (await chrome.notifications.getPermissionLevel() !== "granted") throw new Error("ブラウザーの通知を許可してください。");
     await chrome.storage.local.set({ settings: saved });
     if (epoch !== startEpoch) return state();
     await chrome.storage.session.set({
@@ -364,7 +364,7 @@ async function check() {
       focusedAfter: typeof input?.focusedAfter === "boolean" ? input.focusedAfter : null,
     });
     if (clickFailure) throw clickFailure;
-    if (!input.trustedPress || !input.trustedRelease) throw new Error("Chromeの押下・解放がゲーム画面へ届いたことを確認できませんでした。");
+    if (!input.trustedPress || !input.trustedRelease) throw new Error("ブラウザーの押下・解放がゲーム画面へ届いたことを確認できませんでした。");
     const deadline = Date.now() + 10000;
     while (Date.now() < deadline) {
       if (!(await isCurrent(run))) return;
@@ -418,7 +418,7 @@ async function resumeOnFocus(tabId) {
 }
 
 async function testNotification() {
-  if (await chrome.notifications.getPermissionLevel() !== "granted") throw new Error("Chromeの通知を許可してください。");
+  if (await chrome.notifications.getPermissionLevel() !== "granted") throw new Error("ブラウザーの通知を許可してください。");
   await chrome.notifications.create("spectator-test", { type: "basic", iconUrl: "icons/icon128.png", title: "雀魂 観戦ウォッチ", message: "テスト通知です。" });
   return state();
 }
@@ -501,7 +501,7 @@ chrome.debugger.onDetach.addListener(source => {
   void ready.then(async () => {
     const wasOwned = await forgetBackgroundAccess(source.tabId);
     if (!wasOwned) return;
-    await stop("Chromeのバックグラウンド接続が解除されたため停止しました。", { notify: true });
+    await stop("ブラウザーのバックグラウンド接続が解除されたため停止しました。", { notify: true });
     const { calibration } = await chrome.storage.session.get("calibration");
     if (calibration?.tabId === source.tabId) await chrome.storage.session.remove("calibration");
   }).catch(reportUnexpected);

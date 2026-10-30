@@ -79,7 +79,7 @@ function renderState(nextState) {
   elements.diagnostics.value = attempt ? [
     "0.3.5　更新" + attempt.number + "回目",
     "押下 " + seconds(attempt.actualHoldMs) + "（設定 " + seconds(attempt.configuredHoldMs) + "）" +
-      (attempt.inputMethod === "chrome" ? (attempt.trustedPress && attempt.trustedRelease ? " Chrome入力確認済み" : " Chrome入力未確認") : "") +
+      (attempt.inputMethod === "chrome" ? (attempt.trustedPress && attempt.trustedRelease ? " ブラウザー入力確認済み" : " ブラウザー入力未確認") : "") +
       (attempt.cursorMovesIgnored > 0 ? " 移動除外 " + attempt.cursorMovesIgnored + "件" : ""),
     "画面のフォーカス　開始 " + flag(attempt.focusedBefore) + "　解放 " + flag(attempt.focusedAfter),
     "通信　要求 " + flag(attempt.requestObserved) + "　応答 " + flag(attempt.responseReceived),
